@@ -1,7 +1,6 @@
 from scanner import *
 from tag import Tag
 
-
 class Env(object):
 
     def __init__(self, n):
@@ -98,12 +97,12 @@ class Parser(object):
             self.match('(')
             x = self.bool()
             self.match(')')
-            self.s1 = self.stmt()
+            s1 = self.stmt()
             if tag is not Tag.ELSE:
-                return If(x, self.s1)
+                return If(x, s1)
             self.match(Tag.ELSE)
             s2 = self.stmt()
-            return Else(x, self.s1, self.s2)
+            return Else(x, s1, s2)
         elif tag is Tag.WHILE:
             whilenode = While()
             savedStmt = Stmt.Enclosing
@@ -112,8 +111,8 @@ class Parser(object):
             self.match('(')
             x = self.bool()
             self.match(')')
-            self.s1 = self.stmt()
-            whilenode.init(x, self.s1)
+            s1 = self.stmt()
+            whilenode.initialize(x, s1)
             Stmt.Enclosing = savedStmt
             return whilenode
         elif tag is Tag.DO:
@@ -121,26 +120,26 @@ class Parser(object):
             savedStmt = Stmt.Enclosing
             Stmt.Enclosing = donode
             self.match(Tag.DO)
-            self.s1 = self.stmt()
+            s1 = self.stmt()
             self.match(Tag.WHILE)
             self.match('(')
             x = self.bool()
             self.match(')')
             self.match(';')
-            donode.init(self.s1, x)
+            donode.initialize(s1, x)
             Stmt.Enclosing = savedStmt
             return donode
         elif tag is Tag.BREAK:
             self.match(Tag.BREAK)
             self.match(';')
             return Break()
-        elif tag is '{':
+        elif tag == '{':
             return self.block()
         else:
             return self.assign()
 
     def stmts(self):
-        if self.look.tag is '}':
+        if self.look.tag == '}':
             return Stmt.Null
         else:
             return Seq(self.stmt(), self.stmts())
@@ -154,18 +153,23 @@ class Parser(object):
             self.error(t.__repr__() + ' undeclared')
         if self.look.tag is '=':    # S -> id = E ; -> requires space before ';'
             self.move()
-            stmt = Set(t_id, self.bool())
+            result = self.bool()
+            # print(type(result), "type of result")
+            # if hasattr(result, "expr1"):
+            #     print(result.expr1, result.expr2, result.op, "result")
+            stmt = Set(t_id, result)
         else:
             x = self.offset(t_id)
             self.match('=')
             stmt = SetElem(x, self.bool())
-        print(stmt.id, stmt.expr)
+        #print(stmt.id, stmt.expr, self.look)
+
         self.match(';')
         return stmt
 
     def bool(self):
         x = self.join()
-        while self.look.tag == Tag.OR:
+        while self.look.tag is Tag.OR:
             tok = self.look
             self.move()
             x = Or(tok, x, self.join())
@@ -173,7 +177,7 @@ class Parser(object):
 
     def join(self):
         x = self.equality()
-        while self.look.tag == Tag.AND:
+        while self.look.tag is Tag.AND:
             tok = self.look
             self.move()
             x = And(tok, x, self.equality())
@@ -198,7 +202,7 @@ class Parser(object):
 
     def expr(self):
         x = self.term()
-        while self.look.tag is '+' or self.look.tag is '-':
+        while self.look.tag == '+' or self.look.tag == '-':
             tok = self.look
             self.move()
             x = Arith(tok, x, self.term())
@@ -206,7 +210,7 @@ class Parser(object):
 
     def term(self):
         x = self.unary()
-        while self.look.tag is '*' or self.look.tag is '/':
+        while self.look.tag == '*' or self.look.tag == '/':
             tok = self.look
             self.move()
             x = Arith(tok, x, self.unary())
@@ -226,11 +230,13 @@ class Parser(object):
     def factor(self):
         x = None
         tag = self.look.tag
-        print(tag, 'factor')
-        if tag is '(':
+        # self.look = Token(c), self.look.tag = 264
+        #print(self.look, self.look.tag, "factor")
+        if tag == '(':
             self.move()
             x = self.bool()
             self.match(')')
+            return x
         elif tag is Tag.NUM:
             x = Constant(self.look, Type.Int)
             self.move()
@@ -249,10 +255,11 @@ class Parser(object):
             return x
         elif tag is Tag.ID:
             t_id = self.top.get(self.look)
-            if not t_id:
+            if t_id is None:
                 self.error(self.look.__repr__() + ' undeclared')
             self.move()
             if self.look.tag != '[':
+                #print(t_id, "t_id")
                 return t_id
             else:
                 return self.offset(t_id)

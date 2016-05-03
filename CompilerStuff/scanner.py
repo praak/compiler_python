@@ -2,11 +2,9 @@ import sys
 from tag import Tag
 
 class Scanner(object):
-	prog_counter = 1
+	prog_counter = 0
 	error_status = 0
 	def __init__(self, filename):
-		Scanner.prog_counter = 1
-		Scanner.error_status = 0
 		self.symbol_table = {}
 		if filename is not None:
 			self.file = open(filename, 'r')
@@ -87,7 +85,7 @@ class Scanner(object):
 			if self.peek == ' ' or self.peek == '\t':
 				pass
 			elif self.peek == '\n':
-				self.prog_counter += 1
+				Scanner.prog_counter += 1
 			else:
 				break
 		# print(self.peek, "test)")
@@ -125,7 +123,7 @@ class Scanner(object):
 			while self.isDigit(self.peek):
 				v = 10*v + int(self.peek)
 				self.readch()
-			if self.peek is not '.':
+			if self.peek != '.':
 				return Num(v)
 			x = v
 			d = 10.0
@@ -175,7 +173,7 @@ class Num(Token):
 		self.value = value
 
 	def __repr__(self):
-		return "" + str(self.value)
+		return str(self.value)
 
 class Real(Token):
 	def __init__(self, value):
@@ -183,7 +181,7 @@ class Real(Token):
 		self.value = value
 
 	def __repr__(self):
-		return "" + self.value
+		return str(self.value)
 
 class Word(Token):
 	def __init__(self, string, tag):
@@ -214,7 +212,7 @@ class Type(Word):
 		return p == Type.Char or p == Type.Int or p == Type.Float
 
 	@staticmethod
-	def max(self, p1, p2):
+	def max(p1, p2):
 		if not Type.numeric(p1) or not Type.numeric(p2):
 			return None
 		elif p1 is Type.Float or p2 is Type.Float:
@@ -241,24 +239,25 @@ class Array(Type):
 class Node(object):
 	labels = 0
 
-	def __init__(self, line=0):
-		self.line = Scanner.prog_counter
+	def __init__(self, line=Scanner.prog_counter):
+		self.line = line
 
 	def error(self, string):
-		raise Exception("near line " + self.line + ": " + string)
+		raise Exception("near line " + str(self.line) + ": " + string)
 
 	def newlabel(self):
 		Node.labels += 1
 		return Node.labels
 
 	def emitlabel(self, i):
-		print("L" + i + ":")
+		print("L" + str(i) + ":")
 
 	def emit(self, s):
 		print("\t" + s)
 
 class Expr(Node):
 	def __init__(self, token, p):
+		super(Expr, self).__init__()
 		self.op = token
 		self.type = p
 
@@ -273,12 +272,12 @@ class Expr(Node):
 
 	def emitjumps(self, test, t, f):
 		if t != 0 and f != 0:
-			self.emit("if " + test + " goto L" + t)
+			self.emit("if " + test + " goto L" + str(t))
 			self.emit("goto L" + f)
 		elif t != 0:
-			self.emit("if " + test + " goto L" + t)
+			self.emit("if " + test + " goto L" + str(t))
 		elif f != 0:
-			self.emit("iffalse " + test + " goto L" + f)
+			self.emit("iffalse " + test + " goto L" + str(f))
 
 	def __repr__(self):
 		return self.op.__repr__()
@@ -293,9 +292,9 @@ class Op(Expr):
 		super(Op, self).__init__(token, p)
 
 	def reduce(self):
-		x = gen()
+		x = self.gen()
 		t = Temp(self.type)
-		emit(t + " = " + x)
+		self.emit(t.__repr__() + " = " + str(x))
 		return t
 
 class Arith(Op):
@@ -303,15 +302,16 @@ class Arith(Op):
 		super(Arith, self).__init__(token, None)
 		self.expr1 = x1
 		self.expr2 = x2
-		t_type = Type.max(expr1.type, expr2.type)
+		t_type = Type.max(self.expr1.type, self.expr2.type)
+		self.type = t_type
 		if not t_type:
 			error("type error")
 
 	def gen(self):
 		return Arith(self.op, self.expr1.reduce(), self.expr2.reduce())
 
-	def __repr__():
-		return self.expr1 + " " + self.op + " " + self.expr2
+	def __repr__(self):
+		return self.expr1.__repr__() + " " + self.op.__repr__() + " " + self.expr2.__repr__()
 
 class Temp(Expr):
 	count = 0
@@ -322,15 +322,16 @@ class Temp(Expr):
 		self.number = Temp.count
 
 	def __repr__(self):
-		return "t" + self.number
+		return "t" + str(self.number)
 
 class Unary(Op):
 	def __init__(self, token, x):
 		super(Unary, self).__init__(token, None)
 		self.expr = x
 		t_type = Type.max(Type.Int, expr.type)
+		self.type = t_type
 		if not t_type:
-			error("type error")
+			self.error("type error")
 
 	def gen(self):
 		return Unary(self.op, self.expr.reduce())
@@ -359,9 +360,10 @@ class Logical(Expr):
 		super(Logical, self).__init__(token, None)
 		self.expr1 = x1
 		self.expr2 = x2
-		t_type = self.check(self.expr2.type, self.expr2.type)
+		t_type = self.check(self.expr1.type, self.expr2.type)
+		self.type = t_type
 		if not t_type:
-			error("type error")
+			self.error("type error")
 
 	def check(self, p1, p2):
 		if p1 is Type.Bool and p2 is Type.Bool:
@@ -423,19 +425,19 @@ class Not(Logical):
 		return self.op + " " + self.expr2
 
 class Rel(Logical):
-	def __init__(self, x1, x2):
+	def __init__(self, tok, x1, x2):
 		super(Rel, self).__init__(tok, x1, x2)
 
-	def check(p1, p2):
+	def check(self, p1, p2):
 		if type(p1) is Array or type(p2) is Array:
 			return None
 		elif p1 == p2:
 			return Type.Bool
 
-	def jumping(t, f):
+	def jumping(self, t, f):
 		a = self.expr1.reduce()
 		b = self.expr2.reduce()
-		test = a + " " + self.op + " " + b
+		test = a.__repr__() + " " + self.op.__repr__() + " " + b.__repr__()
 		self.emitjumps(test, t, f)
 
 class Access(Op):
@@ -454,7 +456,10 @@ class Access(Op):
 		return self.array + " [ " + self.index.__repr__() + " ]"
 
 class Stmt(Node):
-	def gen(b, a):
+	def __init__(self):
+		self.line = Scanner.prog_counter
+
+	def gen(self, b, a):
 		self.after = 0
 
 Stmt.Null = Stmt()
@@ -462,28 +467,30 @@ Stmt.Enclosing = Stmt.Null
 
 class If(Stmt):
 	def __init__(self, x, s):
+		self.line = Scanner.prog_counter
 		self.expr = x
 		self.stmt = s
 		if self.expr.type is not Type.Bool:
 			self.expr.error("boolean required in if")
 
-	def gen(b, a):
-		label = newlabel()
+	def gen(self, b, a):
+		label = self.newlabel()
 		self.expr.jumping(0, a)
-		emitlabel(label)
+		self.emitlabel(label)
 		self.stmt.gen(label, a)
 
 class Else(Stmt):
 	def __init__(self, x, s1, s2):
+		self.line = Scanner.prog_counter
 		self.expr = x
 		self.stmt1 = s1
 		self.stmt2 = s2
 		if self.expr.type is not Type.Bool:
 			self.expr.error("boolean required in if")
 
-	def gen(b, a):
-		label1 = newlabel()
-		label2 = newlabel()
+	def gen(self, b, a):
+		label1 = self.newlabel()
+		label2 = self.newlabel()
 		self.expr.jumping(0, label2)
 		self.emitlabel(label1)
 		self.stmt.gen(label1, a)
@@ -493,35 +500,37 @@ class Else(Stmt):
 
 class While(Stmt):
 	def __init__(self):
+		self.line = Scanner.prog_counter
 		self.expr = None
 		self.stmt = None
 
-	def initialize(x, s):
+	def initialize(self, x, s):
 		self.expr = x
 		self.stmt = s
 		if self.expr.type is not Type.Bool:
 			self.expr.error("boolean required in while")
 
-	def gen(b, a):
+	def gen(self, b, a):
 		self.after = a
 		self.expr.jumping(0, a)
-		label = newlabel()
+		label = self.newlabel()
 		self.emitlabel(label)
 		self.stmt.gen(label, b)
-		self.emit("goto L" + b)
+		self.emit("goto L" + str(b))
 
 class Do(Stmt):
 	def __init__(self):
+		self.line = Scanner.prog_counter
 		self.expr = None
 		self.stmt = None
 
-	def initialize(s, x):
+	def initialize(self, s, x):
 		self.expr = x
 		self.stmt = s
 		if self.expr.type is not Type.Bool:
 			self.expr.error("boolean required in do")
 
-	def gen(b, a):
+	def gen(self, b, a):
 		self.after = a
 		label = newlabel()
 		self.stmt.gen(b, label)
@@ -530,22 +539,28 @@ class Do(Stmt):
 
 class Set(Stmt):
 	def __init__(self, i, x):
+		self.line = Scanner.prog_counter
 		self.id = i
 		self.expr = x
-		if not self.check(self.id.type, self.expr.type):
+		self.type = self.check(self.id.type, self.expr.type)
+		if not self.type:
 			self.error("type error")
 
 	def check(self, p1, p2):
 		if Type.numeric(p1) and Type.numeric(p2):
+			#print(p2, "p2")
 			return p2
-		elif p1 is Type.Bool and p2 is Type.Bool:
+		elif p1 == Type.Bool and p2 == Type.Bool:
+			#print(p2, "p23")
 			return p2
+		#print(p1, p2, "none")
 
-	def gen(b, a):
-		self.emit(self.id + " = " + self.expr.gen())
+	def gen(self, b, a):
+		self.emit(self.id.__repr__() + " = " + self.expr.gen().__repr__())
 
 class SetElem(Stmt):
 	def __init__(self, x, y):
+		self.line = Scanner.prog_counter
 		self.array = x.array
 		self.index = x.index
 		self.expr = y
@@ -560,34 +575,36 @@ class SetElem(Stmt):
 		elif Type.numeric(p1) and Type.numeric(p2):
 			return p2
 
-	def gen(b, a):
+	def gen(self, b, a):
 		s1 = self.index.reduce()
 		s2 = self.expr.reduce()
 		self.emit(self.array + " [ " + s1 + "] = " + s2)
 
 class Seq(Stmt):
-	def __init__(s1, s2):
+	def __init__(self, s1, s2):
+		self.line = Scanner.prog_counter
 		self.stmt1 = s1
 		self.stmt2 = s2
 
-	def gen(b, a):
+	def gen(self, b, a):
 		if self.stmt1 == Stmt.Null:
 			self.stmt2.gen(b, a)
 		elif self.stmt2 == Stmt.Null:
 			self.stmt1.gen(b, a)
 		else:
-			label = newlabel()
+			label = self.newlabel()
 			self.stmt1.gen(b, label)
 			self.emitlabel(label)
 			self.stmt2.gen(label, a)
 
 class Break(Stmt):
 	def __init__(self):
-		if Stmt.Enclosing:
-			error("unenclosed break")
+		self.line = Scanner.prog_counter
+		if Stmt.Enclosing is not Stmt.Null:
+			self.error("unenclosed break")
 			self.stmt = Stmt.Enclosing
 
-	def gen(b, a):
+	def gen(self, b, a):
 		self.emit("goto L" + self.stmt.after)
 
 #
